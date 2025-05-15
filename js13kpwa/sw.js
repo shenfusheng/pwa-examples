@@ -1,4 +1,3 @@
-self.importScripts('data/games.js');
 
 /**
  * Optimized Service Worker Implementation
@@ -8,41 +7,74 @@ self.importScripts('data/games.js');
 
 // Cache names
 const CACHE_NAMES = {
-  static: 'static-cache-v5',
-  dynamic: 'dynamic-cache-v2'
+  static: 'static-cache-v6', // Adjusted version number
+  dynamic: 'dynamic-cache-v6'
 }
 
 // Core static assets to precache.
-// These assets are cached on service worker installation, ensuring they are available
-// for the very first load, even if the user is offline.
-// Note: cache.addAll() does not support glob patterns like './assets/**'.
-// If specific assets from a directory are needed for precaching, they must be listed explicitly
-// or this array should be populated by a build process that resolves such patterns.
-// For simplicity, './assets/**' is removed here; add specific, critical asset paths if needed.
+// Minimal list to ensure successful installation while providing basic offline functionality
 const CORE_ASSETS = [
-  './', // Represents the root path, often serving index.html
+  './', // Root path (index.html)
+  './index.html' // Explicitly include index.html
+]
+
+// Additional assets that should be cached but won't block installation if they fail
+const ADDITIONAL_ASSETS = [
+  './favicon.ico',
+  './apple-touch-icon.png',
+  './pwa-192x192.png',
+  './pwa-512x512.png',
+  './manifest.webmanifest'
 ]
 
 // Install event - precache core assets
 self.addEventListener('install', (event) => {
   console.log('[Service Worker] Installing...')
+
+  // Use a two-phase caching approach:
+  // 1. First, cache essential assets (will fail if any can't be cached)
+  // 2. Then, try to cache additional assets (won't fail installation if some can't be cached)
   event.waitUntil(
     caches
       .open(CACHE_NAMES.static)
-      .then((cache) => {
+      .then(async (cache) => {
         console.log('[Service Worker] Precaching core assets')
-        return cache.addAll(CORE_ASSETS)
+        // Add core assets first
+        await cache.addAll(CORE_ASSETS)
+
+        // Then try to add additional assets individually
+        // This way, if any additional asset fails, it won't prevent service worker installation
+        const additionalCachePromises = ADDITIONAL_ASSETS.map((asset) =>
+          fetch(asset)
+            .then((response) => {
+              if (response.ok) {
+                return cache.put(asset, response)
+              }
+              console.warn(`[Service Worker] Failed to cache: ${asset}`)
+              return Promise.resolve() // Don't fail if this asset can't be cached
+            })
+            .catch((err) => {
+              console.warn(`[Service Worker] Failed to fetch: ${asset}`, err)
+              return Promise.resolve() // Don't fail if this asset can't be fetched
+            })
+        )
+
+        return Promise.all(additionalCachePromises)
       })
       .catch((error) => {
         console.error('[Service Worker] Precaching failed:', error)
       })
   )
+
+  // Take control immediately
   self.skipWaiting()
 })
 
-// Activate event - clean up old caches
+// Activate event - clean up old caches and immediately claim clients
 self.addEventListener('activate', (event) => {
   console.log('[Service Worker] Activated')
+
+  // Clean up old cache versions
   event.waitUntil(
     caches
       .keys()
@@ -50,20 +82,20 @@ self.addEventListener('activate', (event) => {
         Promise.all(
           keys
             .filter((key) => !Object.values(CACHE_NAMES).includes(key))
-            .map((oldKey) => caches.delete(oldKey))
+            .map((oldKey) => {
+              console.log(`[Service Worker] Deleting old cache: ${oldKey}`)
+              return caches.delete(oldKey)
+            })
         )
       )
+      .then(() => {
+        console.log('[Service Worker] Claiming clients')
+        return self.clients.claim() // Take control of all pages immediately
+      })
   )
-  // Ensure the new service worker takes control of all clients immediately.
-  return self.clients.claim()
 })
 
-/**
- * Network-first strategy with cache fallback
- * @param {Request} request
- * @param {string} cacheName
- * @returns {Promise<Response>}
- */
+// Network-first strategy with cache fallback
 async function networkFirst(request, cacheName) {
   try {
     const networkResponse = await fetch(request)
@@ -95,14 +127,7 @@ async function networkFirst(request, cacheName) {
   }
 }
 
-/**
- * Stale-while-revalidate strategy
- * Responds from cache if available, then updates cache from network.
- * If not in cache, fetches from network, caches, and responds.
- * @param {Request} request
- * @param {string} cacheName
- * @returns {Promise<Response>}
- */
+// Stale-while-revalidate strategy
 async function staleWhileRevalidate(request, cacheName) {
   const cache = await caches.open(cacheName)
   const cachedResponse = await cache.match(request)
@@ -131,7 +156,6 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(request.url)
 
   // Ignore non-GET requests and cross-origin requests.
-  // if (url.origin !== self.location.origin || request.method !== 'GET') return
   if (request.method !== 'GET') return
 
   // Handle navigation requests (e.g., index.html) with network-first.
@@ -166,5 +190,3 @@ self.addEventListener('message', (event) => {
     console.log(`[Service Worker] Network is now ${event.data.isOnline ? 'online' : 'offline'}`)
   }
 })
-
-
