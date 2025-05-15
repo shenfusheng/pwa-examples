@@ -36,10 +36,15 @@ const CORE_ASSETS = [
 self.addEventListener('install', (event) => {
   console.log('[Service Worker] Installing...')
   event.waitUntil(
-    caches.open(CACHE_NAMES.static).then((cache) => {
-      console.log('[Service Worker] Precaching core assets')
-      return cache.addAll(CORE_ASSETS)
-    })
+    caches
+      .open(CACHE_NAMES.static)
+      .then((cache) => {
+        console.log('[Service Worker] Precaching core assets')
+        return cache.addAll(CORE_ASSETS)
+      })
+      .catch((error) => {
+        console.error('[Service Worker] Precaching failed:', error)
+      })
   )
   self.skipWaiting()
 })
@@ -170,4 +175,5 @@ self.addEventListener('message', (event) => {
     console.log(`[Service Worker] Network is now ${event.data.isOnline ? 'online' : 'offline'}`)
   }
 })
+
 
