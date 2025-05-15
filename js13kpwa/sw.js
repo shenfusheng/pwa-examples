@@ -4,68 +4,48 @@
  * Updates cache with latest network sources
  */
 
-// Cache names
+// Cache names - Increment version to force refresh
 const CACHE_NAMES = {
-  static: 'static-cache-v7', // Adjusted version number
-  dynamic: 'dynamic-cache-v7'
+  static: 'static-cache-v9', // Incremented version number
+  dynamic: 'dynamic-cache-v9'
 }
 
-// Core static assets to precache.
-// Minimal list to ensure successful installation while providing basic offline functionality
+// Core static assets to precache - only include assets confirmed to exist
 const CORE_ASSETS = [
   './', // Root path (index.html)
-  './index.html' // Explicitly include index.html
-]
-
-// Additional assets that should be cached but won't block installation if they fail
-const ADDITIONAL_ASSETS = [
-  './favicon.ico',
-  './apple-touch-icon.png',
-  './pwa-192x192.png',
-  './pwa-512x512.png',
-  './manifest.webmanifest'
+  './index.html', // Explicitly include index.html
+  './favicon.ico' // This was confirmed to exist from your logs
 ]
 
 // Install event - precache core assets
 self.addEventListener('install', (event) => {
-  console.log('[Service Worker] Installing...')
+  console.log('[Service Worker] Installing...', new Date().toISOString())
 
-  // Use a two-phase caching approach with better error handling and reporting
+  // Use a streamlined caching approach focused on core assets
   event.waitUntil(
     (async () => {
       try {
         // Open the cache
         const cache = await caches.open(CACHE_NAMES.static)
-        console.log('[Service Worker] Cache opened')
+        console.log('[Service Worker] Cache opened:', CACHE_NAMES.static)
 
         // Log what we're about to cache
-        console.log('[Service Worker] Precaching core assets:', CORE_ASSETS)
+        console.log('[Service Worker] Precaching assets:', CORE_ASSETS)
 
-        // Add core assets first with better error reporting
+        // Add core assets with error reporting
         try {
           await cache.addAll(CORE_ASSETS)
-          console.log('[Service Worker] Core assets successfully cached')
+          console.log('[Service Worker] Assets successfully cached in', CACHE_NAMES.static)
+
+          // List all cached items to confirm
+          const keys = await cache.keys()
+          console.log(
+            `[Service Worker] ${CACHE_NAMES.static} now contains:`,
+            keys.map((req) => req.url)
+          )
         } catch (error) {
-          console.error('[Service Worker] Failed to cache core assets:', error)
+          console.error('[Service Worker] Failed to cache assets:', error)
           throw error // Re-throw to fail the installation
-        }
-
-        // Then try to add additional assets individually with detailed logging
-        console.log('[Service Worker] Attempting to cache additional assets:', ADDITIONAL_ASSETS)
-
-        // Process additional assets one by one for better error isolation
-        for (const asset of ADDITIONAL_ASSETS) {
-          try {
-            const response = await fetch(asset)
-            if (response.ok) {
-              await cache.put(asset, response)
-              console.log(`[Service Worker] Successfully cached: ${asset}`)
-            } else {
-              console.warn(`[Service Worker] Failed to cache (status ${response.status}): ${asset}`)
-            }
-          } catch (err) {
-            console.warn(`[Service Worker] Failed to fetch: ${asset}`, err)
-          }
         }
 
         console.log('[Service Worker] Installation complete')
@@ -83,14 +63,28 @@ self.addEventListener('install', (event) => {
 
 // Activate event - clean up old caches and immediately claim clients
 self.addEventListener('activate', (event) => {
-  console.log('[Service Worker] Activated')
+  console.log('[Service Worker] Activated', new Date().toISOString())
+
+  // This ensures faster control of clients
+  self.clients.matchAll().then((clients) => {
+    clients.forEach((client) => {
+      client.postMessage({
+        type: 'SW_ACTIVATED',
+        message: 'New service worker activated'
+      })
+    })
+  })
 
   // Clean up old cache versions
   event.waitUntil(
-    caches
-      .keys()
-      .then((keys) =>
-        Promise.all(
+    (async () => {
+      try {
+        // Get all cache keys
+        const keys = await caches.keys()
+        console.log('[Service Worker] All cache keys:', keys)
+
+        // Delete old versions
+        await Promise.all(
           keys
             .filter((key) => !Object.values(CACHE_NAMES).includes(key))
             .map((oldKey) => {
@@ -98,11 +92,35 @@ self.addEventListener('activate', (event) => {
               return caches.delete(oldKey)
             })
         )
-      )
-      .then(() => {
-        console.log('[Service Worker] Claiming clients')
-        return self.clients.claim() // Take control of all pages immediately
-      })
+
+        // Check what's in our current cache
+        const staticCache = await caches.open(CACHE_NAMES.static)
+        const cacheKeys = await staticCache.keys()
+        console.log(
+          `[Service Worker] ${CACHE_NAMES.static} contains:`,
+          cacheKeys.map((req) => req.url)
+        )
+
+        // FORCEFUL CLIENT CLAIMING - This makes the service worker take control immediately
+        await self.clients.claim()
+        console.log('[Service Worker] Clients claimed successfully', new Date().toISOString())
+
+        // Notify the main page that we're ready to handle requests
+        self.clients.matchAll().then((clients) => {
+          clients.forEach((client) => {
+            client.postMessage({
+              type: 'SW_READY',
+              message: 'Service worker is ready to handle requests'
+            })
+          })
+        })
+
+        return true
+      } catch (error) {
+        console.error('[Service Worker] Activation error:', error)
+        throw error
+      }
+    })()
   )
 })
 
@@ -239,43 +257,94 @@ async function staleWhileRevalidate(request, cacheName) {
   return networkFetchPromise
 }
 
-// Fetch handler - applies appropriate caching strategies to all GET requests from same origin
+// Fetch handler - slightly modified to ensure cache status is logged
+let firstFetchHandled = false
+
 self.addEventListener('fetch', (event) => {
+  if (!firstFetchHandled) {
+    console.log(
+      '[Service Worker] 🚨 First fetch event received!',
+      new Date().toISOString(),
+      event.request.url
+    )
+    firstFetchHandled = true
+  }
+
   const { request } = event
   const url = new URL(request.url)
 
-  // Ignore non-GET requests and cross-origin requests.
+  // Ignore non-GET requests
   if (request.method !== 'GET') return
+
+  // Log all fetch operations to help with debugging
+  console.log(`[Service Worker] Fetch: ${request.url}`)
 
   // Handle navigation requests (e.g., index.html) with network-first.
   if (request.mode === 'navigate') {
+    console.log(`[Service Worker] Navigation request: ${request.url}`)
     event.respondWith(networkFirst(request, CACHE_NAMES.static))
     return
   }
 
-  // Handle static assets (CSS, JS, images, fonts) with stale-while-revalidate.
+  // Handle static assets with stale-while-revalidate.
   const isStaticAsset =
     ['style', 'script', 'font', 'image'].includes(request.destination) ||
     /\.(svg|css|js|json|woff2?|ttf|eot|wasm|png|jpe?g|gif)$/.test(url.pathname)
 
   if (isStaticAsset) {
+    console.log(`[Service Worker] Static asset request: ${request.url}`)
     event.respondWith(staleWhileRevalidate(request, CACHE_NAMES.static))
     return
   }
 
   // Handle API requests with network-first.
   if (url.pathname.includes('/api/') || url.pathname.includes('/graphql')) {
+    console.log(`[Service Worker] API request: ${request.url}`)
     event.respondWith(networkFirst(request, CACHE_NAMES.dynamic))
     return
   }
 
   // Default handling for any other GET requests.
+  console.log(`[Service Worker] Default handling: ${request.url}`)
   event.respondWith(staleWhileRevalidate(request, CACHE_NAMES.dynamic))
 })
+
+// Add this code to add a bit more insight into what resources are requested during page load
+self.addEventListener(
+  'fetch',
+  (event) => {
+    // Record request destinations to see what types of resources are being fetched
+    const destination = event.request.destination || 'unknown'
+    if (!self._requestStats) {
+      self._requestStats = {}
+    }
+
+    if (!self._requestStats[destination]) {
+      self._requestStats[destination] = 0
+    }
+
+    self._requestStats[destination]++
+
+    // Log every 5 requests to prevent console clutter
+    if (Object.values(self._requestStats).reduce((a, b) => a + b, 0) % 5 === 0) {
+      console.log('[Service Worker] Request statistics:', JSON.stringify(self._requestStats))
+    }
+  },
+  { passive: true }
+)
 
 // Listen for online/offline status messages
 self.addEventListener('message', (event) => {
   if (event.data?.type === 'NETWORK_STATUS') {
     console.log(`[Service Worker] Network is now ${event.data.isOnline ? 'online' : 'offline'}`)
+  }
+  // Add a ping-pong mechanism to check if the service worker is responsive
+  else if (event.data?.type === 'PING') {
+    console.log(`[Service Worker] Received ping`, new Date().toISOString())
+    event.source.postMessage({
+      type: 'PONG',
+      message: 'Service worker is active and responding',
+      timestamp: new Date().toISOString()
+    })
   }
 })
