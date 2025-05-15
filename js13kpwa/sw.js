@@ -8,7 +8,7 @@ self.importScripts('data/games.js');
 
 // Cache names
 const CACHE_NAMES = {
-  static: 'static-cache-v3',
+  static: 'static-cache-v4',
   dynamic: 'dynamic-cache-v2'
 }
 
