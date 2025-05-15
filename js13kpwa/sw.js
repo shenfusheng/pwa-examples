@@ -1,4 +1,3 @@
-
 /**
  * Optimized Service Worker Implementation
  * Focuses on providing offline functionality using a network-first approach
@@ -7,8 +6,8 @@
 
 // Cache names
 const CACHE_NAMES = {
-  static: 'static-cache-v6', // Adjusted version number
-  dynamic: 'dynamic-cache-v6'
+  static: 'static-cache-v7', // Adjusted version number
+  dynamic: 'dynamic-cache-v7'
 }
 
 // Core static assets to precache.
@@ -31,39 +30,51 @@ const ADDITIONAL_ASSETS = [
 self.addEventListener('install', (event) => {
   console.log('[Service Worker] Installing...')
 
-  // Use a two-phase caching approach:
-  // 1. First, cache essential assets (will fail if any can't be cached)
-  // 2. Then, try to cache additional assets (won't fail installation if some can't be cached)
+  // Use a two-phase caching approach with better error handling and reporting
   event.waitUntil(
-    caches
-      .open(CACHE_NAMES.static)
-      .then(async (cache) => {
-        console.log('[Service Worker] Precaching core assets')
-        // Add core assets first
-        await cache.addAll(CORE_ASSETS)
+    (async () => {
+      try {
+        // Open the cache
+        const cache = await caches.open(CACHE_NAMES.static)
+        console.log('[Service Worker] Cache opened')
 
-        // Then try to add additional assets individually
-        // This way, if any additional asset fails, it won't prevent service worker installation
-        const additionalCachePromises = ADDITIONAL_ASSETS.map((asset) =>
-          fetch(asset)
-            .then((response) => {
-              if (response.ok) {
-                return cache.put(asset, response)
-              }
-              console.warn(`[Service Worker] Failed to cache: ${asset}`)
-              return Promise.resolve() // Don't fail if this asset can't be cached
-            })
-            .catch((err) => {
-              console.warn(`[Service Worker] Failed to fetch: ${asset}`, err)
-              return Promise.resolve() // Don't fail if this asset can't be fetched
-            })
-        )
+        // Log what we're about to cache
+        console.log('[Service Worker] Precaching core assets:', CORE_ASSETS)
 
-        return Promise.all(additionalCachePromises)
-      })
-      .catch((error) => {
-        console.error('[Service Worker] Precaching failed:', error)
-      })
+        // Add core assets first with better error reporting
+        try {
+          await cache.addAll(CORE_ASSETS)
+          console.log('[Service Worker] Core assets successfully cached')
+        } catch (error) {
+          console.error('[Service Worker] Failed to cache core assets:', error)
+          throw error // Re-throw to fail the installation
+        }
+
+        // Then try to add additional assets individually with detailed logging
+        console.log('[Service Worker] Attempting to cache additional assets:', ADDITIONAL_ASSETS)
+
+        // Process additional assets one by one for better error isolation
+        for (const asset of ADDITIONAL_ASSETS) {
+          try {
+            const response = await fetch(asset)
+            if (response.ok) {
+              await cache.put(asset, response)
+              console.log(`[Service Worker] Successfully cached: ${asset}`)
+            } else {
+              console.warn(`[Service Worker] Failed to cache (status ${response.status}): ${asset}`)
+            }
+          } catch (err) {
+            console.warn(`[Service Worker] Failed to fetch: ${asset}`, err)
+          }
+        }
+
+        console.log('[Service Worker] Installation complete')
+        return true // Explicitly return success
+      } catch (mainError) {
+        console.error('[Service Worker] Installation failed:', mainError)
+        return Promise.reject(mainError) // Explicitly reject on failure
+      }
+    })()
   )
 
   // Take control immediately
@@ -97,19 +108,42 @@ self.addEventListener('activate', (event) => {
 
 // Network-first strategy with cache fallback
 async function networkFirst(request, cacheName) {
+  const requestUrl = request.url
+  console.log(`[Service Worker] NetworkFirst: Fetching ${requestUrl}`)
+
   try {
     const networkResponse = await fetch(request)
+    console.log(
+      `[Service Worker] NetworkFirst: Network response for ${requestUrl}`,
+      `status: ${networkResponse.status}`
+    )
+
     if (networkResponse.ok) {
       const cache = await caches.open(cacheName)
-      cache.put(request, networkResponse.clone())
+      console.log(
+        `[Service Worker] NetworkFirst: Caching response for ${requestUrl} in ${cacheName}`
+      )
+      await cache.put(request, networkResponse.clone())
+      console.log(`[Service Worker] NetworkFirst: Successfully cached ${requestUrl}`)
+    } else {
+      console.warn(
+        `[Service Worker] NetworkFirst: Bad response (${networkResponse.status}) for ${requestUrl}`
+      )
     }
     return networkResponse
-  } catch {
-    console.log('[Service Worker] Network failed, falling back to cache')
-    const cached = await caches.match(request)
-    if (cached) return cached
+  } catch (error) {
+    console.log(`[Service Worker] NetworkFirst: Network failed for ${requestUrl}`, error)
+    console.log(`[Service Worker] NetworkFirst: Falling back to cache for ${requestUrl}`)
 
+    const cached = await caches.match(request)
+    if (cached) {
+      console.log(`[Service Worker] NetworkFirst: Serving from cache for ${requestUrl}`)
+      return cached
+    }
+
+    console.log(`[Service Worker] NetworkFirst: No cache found for ${requestUrl}`)
     if (request.url.includes('/api/') || request.url.includes('/graphql')) {
+      console.log(`[Service Worker] NetworkFirst: Serving offline API response for ${requestUrl}`)
       return new Response(
         JSON.stringify({ offline: true, message: 'Offline: data unavailable.' }),
         { headers: { 'Content-Type': 'application/json' } }
@@ -117,9 +151,13 @@ async function networkFirst(request, cacheName) {
     }
 
     if (request.mode === 'navigate') {
+      console.log(
+        `[Service Worker] NetworkFirst: Serving index.html for navigation to ${requestUrl}`
+      )
       return caches.match('./index.html')
     }
 
+    console.log(`[Service Worker] NetworkFirst: Serving generic offline response for ${requestUrl}`)
     return new Response('Resource unavailable offline', {
       status: 200,
       headers: { 'Content-Type': 'text/plain' }
@@ -129,25 +167,76 @@ async function networkFirst(request, cacheName) {
 
 // Stale-while-revalidate strategy
 async function staleWhileRevalidate(request, cacheName) {
+  const requestUrl = request.url
+  console.log(`[Service Worker] StaleWhileRevalidate: Handling ${requestUrl}`)
+
   const cache = await caches.open(cacheName)
   const cachedResponse = await cache.match(request)
+
+  if (cachedResponse) {
+    console.log(`[Service Worker] StaleWhileRevalidate: Cache hit for ${requestUrl}`)
+  } else {
+    console.log(`[Service Worker] StaleWhileRevalidate: Cache miss for ${requestUrl}`)
+  }
 
   // Fetch from network in parallel to update cache.
   const networkFetchPromise = fetch(request)
     .then((networkResponse) => {
+      console.log(
+        `[Service Worker] StaleWhileRevalidate: Network response for ${requestUrl}`,
+        `status: ${networkResponse.status}`
+      )
+
       if (networkResponse.ok) {
-        cache.put(request, networkResponse.clone())
+        console.log(
+          `[Service Worker] StaleWhileRevalidate: Updating cache for ${requestUrl} in ${cacheName}`
+        )
+        cache
+          .put(request, networkResponse.clone())
+          .then(() =>
+            console.log(`[Service Worker] StaleWhileRevalidate: Cache updated for ${requestUrl}`)
+          )
+          .catch((err) =>
+            console.error(
+              `[Service Worker] StaleWhileRevalidate: Failed to update cache for ${requestUrl}`,
+              err
+            )
+          )
+      } else {
+        console.warn(
+          `[Service Worker] StaleWhileRevalidate: Bad response (${networkResponse.status}) for ${requestUrl}`
+        )
       }
       return networkResponse
     })
     .catch((error) => {
-      console.warn('[Service Worker] Network fetch failed for staleWhileRevalidate:', error)
-      if (!cachedResponse) throw error
+      console.warn(
+        `[Service Worker] StaleWhileRevalidate: Network fetch failed for ${requestUrl}`,
+        error
+      )
+      if (!cachedResponse) {
+        console.error(
+          `[Service Worker] StaleWhileRevalidate: No cache available as fallback for ${requestUrl}`
+        )
+        throw error
+      }
+      console.log(
+        `[Service Worker] StaleWhileRevalidate: Using cached response as fallback for ${requestUrl}`
+      )
       return cachedResponse
     })
 
   // Return cached response immediately if available, otherwise wait for network.
-  return cachedResponse || networkFetchPromise
+  if (cachedResponse) {
+    console.log(
+      `[Service Worker] StaleWhileRevalidate: Returning cached response for ${requestUrl} while revalidating`
+    )
+    return cachedResponse
+  }
+  console.log(
+    `[Service Worker] StaleWhileRevalidate: Waiting for network response for ${requestUrl}`
+  )
+  return networkFetchPromise
 }
 
 // Fetch handler - applies appropriate caching strategies to all GET requests from same origin
