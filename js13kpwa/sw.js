@@ -8,7 +8,7 @@ self.importScripts('data/games.js');
 
 // Cache names
 const CACHE_NAMES = {
-  static: 'static-cache-v4',
+  static: 'static-cache-v5',
   dynamic: 'dynamic-cache-v2'
 }
 
@@ -21,15 +21,6 @@ const CACHE_NAMES = {
 // For simplicity, './assets/**' is removed here; add specific, critical asset paths if needed.
 const CORE_ASSETS = [
   './', // Represents the root path, often serving index.html
-  './index.html', // The main HTML file
-  './favicon.ico', // Application favicon
-  './apple-touch-icon.png', // Apple touch icon
-  './pwa-192x192.png', // PWA icon
-  './pwa-512x512.png', // PWA icon
-  './manifest.webmanifest' // Web app manifest
-  // Add other critical assets here, e.g., './css/style.css', './js/main.js'
-  // './assets/**' was removed as it's not standard for cache.addAll.
-  // List specific critical assets from your assets folder if they must be precached.
 ]
 
 // Install event - precache core assets
