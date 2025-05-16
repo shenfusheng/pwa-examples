@@ -6,7 +6,7 @@
 
 // Cache names - Increment version to force refresh
 const CACHE_NAMES = {
-  static: "static-cache-v13", // Incremented version number
+  static: "static-cache-v14", // Incremented version number
   dynamic: "dynamic-cache-v8",
 };
 
