@@ -80,3 +80,89 @@ if ("IntersectionObserver" in window) {
   });
 }
 console.log("new version");
+
+// Add update notification functionality
+document.addEventListener("DOMContentLoaded", () => {
+  // Create UI elements for the update notification
+  const updateContainer = document.createElement("div");
+  updateContainer.className = "update-notification";
+  updateContainer.style.display = "none";
+  updateContainer.innerHTML = `
+    <div class="update-content">
+      <p>A new version is available!</p>
+      <button id="update-button">Refresh to update</button>
+    </div>
+  `;
+  document.body.appendChild(updateContainer);
+
+  // Style the update notification
+  const style = document.createElement("style");
+  style.textContent = `
+    .update-notification {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: #2196F3;
+      color: white;
+      padding: 1rem;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.2);
+      z-index: 1000;
+      transform: translateY(100%);
+      transition: transform 0.3s ease-out;
+    }
+    .update-notification.visible {
+      transform: translateY(0);
+    }
+    .update-content {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      width: 100%;
+      max-width: 600px;
+    }
+    #update-button {
+      background: white;
+      color: #2196F3;
+      border: none;
+      padding: 0.5rem 1rem;
+      border-radius: 4px;
+      cursor: pointer;
+      font-weight: bold;
+    }
+    #update-button:hover {
+      background: #e3f2fd;
+    }
+  `;
+  document.head.appendChild(style);
+
+  // Add event listener for the update button
+  document.getElementById("update-button").addEventListener("click", () => {
+    // Tell the service worker we're applying updates
+    if (navigator.serviceWorker.controller) {
+      navigator.serviceWorker.controller.postMessage({
+        type: "CLEAR_UPDATES",
+      });
+    }
+    // Reload the page to apply updates
+    window.location.reload();
+  });
+
+  // Listen for update messages from the service worker
+  navigator.serviceWorker.addEventListener("message", (event) => {
+    if (event.data && event.data.type === "UPDATE_AVAILABLE") {
+      console.log("Update available:", event.data.updatedResources);
+
+      // Show the update notification
+      updateContainer.style.display = "flex";
+      // Use setTimeout to ensure the browser has time to apply the display change
+      // before we add the 'visible' class for the transition
+      setTimeout(() => {
+        updateContainer.classList.add("visible");
+      }, 10);
+    }
+  });
+});
