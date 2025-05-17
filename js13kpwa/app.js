@@ -24,7 +24,7 @@ for (let i = 0; i < games.length; i++) {
   content += entry;
 }
 document.getElementById("content").innerHTML = content;
-document.getElementById("version").innerText = "new version 10";
+document.getElementById("version").innerText = "new version 11";
 
 // Registering Service Worker
 if ("serviceWorker" in navigator) {
@@ -149,7 +149,13 @@ document.addEventListener("DOMContentLoaded", () => {
       });
     }
     // Reload the page to apply updates
-    window.location.reload();
+    // Adding a small delay to ensure the service worker has time to clear the cache
+    const reloadDelay = 500; // 500ms delay
+    console.log(`Waiting ${reloadDelay}ms for cache clearing before reload`);
+    setTimeout(() => {
+      console.log("Reloading page to apply updates");
+      window.location.reload();
+    }, reloadDelay);
   });
 
   // Listen for update messages from the service worker
