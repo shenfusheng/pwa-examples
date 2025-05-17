@@ -6,14 +6,13 @@
 
 // Cache names - Increment version to force refresh
 const CACHE_NAMES = {
-  static: "static-cache-v14", // Incremented version number
+  static: "static-cache-v15", // Incremented version number
   dynamic: "dynamic-cache-v8",
 };
 
 // Core static assets to precache - only include assets confirmed to exist
 const CORE_ASSETS = [
   "./", // Root path (index.html)
-  "./index.html", // Explicitly include index.html
   "./favicon.ico", // This was confirmed to exist from your logs
 ];
 const swversion = "v15"; // Update this version when making changes to the service worker
@@ -67,7 +66,7 @@ self.addEventListener("install", (event) => {
 // Activate event - clean up old caches and immediately claim clients
 self.addEventListener("activate", (event) => {
   console.log("[Service Worker] Activated");
-  // self.clients.claim(); // Take control of all clients immediately
+  self.clients.claim(); // Take control of all clients immediately
   setTimeout(() => {
     checkForUpdates();
     console.log("[Service Worker] Checking for updates...");
