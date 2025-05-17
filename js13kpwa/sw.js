@@ -16,10 +16,10 @@ const CORE_ASSETS = [
   "./index.html", // Explicitly include index.html
   "./favicon.ico", // This was confirmed to exist from your logs
 ];
-
+const swversion = "v14"; // Update this version when making changes to the service worker
 // Install event - precache core assets
 self.addEventListener("install", (event) => {
-  console.log("[Service Worker] Installing");
+  console.log("[Service Worker] Installing...", swversion);
 
   // Use a streamlined caching approach focused on core assets
   event.waitUntil(
