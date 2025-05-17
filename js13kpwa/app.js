@@ -24,7 +24,7 @@ for (let i = 0; i < games.length; i++) {
   content += entry;
 }
 document.getElementById("content").innerHTML = content;
-document.getElementById("version").innerText = "new version 18";
+document.getElementById("version").innerText = "new version 19";
 
 // Registering Service Worker
 if ("serviceWorker" in navigator) {

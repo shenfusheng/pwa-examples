@@ -15,7 +15,7 @@ const CORE_ASSETS = [
   "./", // Root path (index.html)
   "./favicon.ico", // This was confirmed to exist from your logs
 ];
-const swversion = "v18"; // Update this version when making changes to the service worker
+const swversion = "v19"; // Update this version when making changes to the service worker
 // Install event - precache core assets
 self.addEventListener("install", (event) => {
   console.log("[Service Worker] Installing...", swversion);
@@ -33,11 +33,11 @@ self.addEventListener("install", (event) => {
 
         // Add core assets with error reporting
         try {
-          await cache.addAll(CORE_ASSETS);
-          console.log(
-            "[Service Worker] Assets successfully cached in",
-            CACHE_NAMES.static
-          );
+          // await cache.addAll(CORE_ASSETS);
+          // console.log(
+          //   "[Service Worker] Assets successfully cached in",
+          //   CACHE_NAMES.static
+          // );
 
           // List all cached items to confirm
           const keys = await cache.keys();
