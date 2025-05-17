@@ -67,7 +67,7 @@ self.addEventListener("install", (event) => {
 // Activate event - clean up old caches and immediately claim clients
 self.addEventListener("activate", (event) => {
   console.log("[Service Worker] Activated");
-  self.clients.claim(); // Take control of all clients immediately
+  // self.clients.claim(); // Take control of all clients immediately
   setTimeout(() => {
     checkForUpdates();
     console.log("[Service Worker] Checking for updates...");
