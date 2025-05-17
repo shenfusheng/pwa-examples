@@ -16,7 +16,7 @@ const CORE_ASSETS = [
   "./index.html", // Explicitly include index.html
   "./favicon.ico", // This was confirmed to exist from your logs
 ];
-const swversion = "v14"; // Update this version when making changes to the service worker
+const swversion = "v15"; // Update this version when making changes to the service worker
 // Install event - precache core assets
 self.addEventListener("install", (event) => {
   console.log("[Service Worker] Installing...", swversion);
@@ -169,11 +169,13 @@ async function staleWhileRevalidate(request, cacheName) {
     );
   }
 
-  // Fetch from network in parallel to update cache.
-  const networkFetchPromise = fetch(request)
-    .then((networkResponse) => {
+  // Always perform the network request in the background to update the cache
+  // using a non-blocking approach
+  const backgroundUpdate = async () => {
+    try {
+      const networkResponse = await fetch(request);
       console.log(
-        `[Service Worker] StaleWhileRevalidate: Network response for ${requestUrl}`,
+        `[Service Worker] StaleWhileRevalidate: Background network response for ${requestUrl}`,
         `status: ${networkResponse.status}`
       );
 
@@ -181,54 +183,77 @@ async function staleWhileRevalidate(request, cacheName) {
         console.log(
           `[Service Worker] StaleWhileRevalidate: Updating cache for ${requestUrl} in ${cacheName}`
         );
-        cache
-          .put(request, networkResponse.clone())
-          .then(() =>
-            console.log(
-              `[Service Worker] StaleWhileRevalidate: Cache updated for ${requestUrl}`
-            )
-          )
-          .catch((err) =>
-            console.error(
-              `[Service Worker] StaleWhileRevalidate: Failed to update cache for ${requestUrl}`,
-              err
-            )
+        try {
+          await cache.put(request, networkResponse.clone());
+          console.log(
+            `[Service Worker] StaleWhileRevalidate: Cache updated for ${requestUrl}`
           );
+        } catch (err) {
+          console.error(
+            `[Service Worker] StaleWhileRevalidate: Failed to update cache for ${requestUrl}`,
+            err
+          );
+        }
       } else {
         console.warn(
           `[Service Worker] StaleWhileRevalidate: Bad response (${networkResponse.status}) for ${requestUrl}`
         );
       }
       return networkResponse;
-    })
-    .catch((error) => {
+    } catch (error) {
       console.warn(
-        `[Service Worker] StaleWhileRevalidate: Network fetch failed for ${requestUrl}`,
+        `[Service Worker] StaleWhileRevalidate: Background fetch failed for ${requestUrl}`,
         error
       );
-      if (!cachedResponse) {
-        console.error(
-          `[Service Worker] StaleWhileRevalidate: No cache available as fallback for ${requestUrl}`
-        );
-        throw error;
-      }
-      console.log(
-        `[Service Worker] StaleWhileRevalidate: Using cached response as fallback for ${requestUrl}`
-      );
-      return cachedResponse;
-    });
+      return null;
+    }
+  };
 
-  // Return cached response immediately if available, otherwise wait for network.
+  // Start the background update but don't wait for it
+  if (self.registration.active) {
+    // We use setTimeout to ensure the fetch happens outside the critical path
+    setTimeout(() => {
+      backgroundUpdate().catch((err) =>
+        console.warn(`[Service Worker] Background update error: ${err.message}`)
+      );
+    }, 0);
+  }
+
+  // If we have a cached response, return it immediately
   if (cachedResponse) {
     console.log(
-      `[Service Worker] StaleWhileRevalidate: Returning cached response for ${requestUrl} while revalidating`
+      `[Service Worker] StaleWhileRevalidate: Immediately returning cached response for ${requestUrl}`
     );
     return cachedResponse;
   }
+
+  // If no cached response, we have to wait for the network response
+  // This is only for the first time a resource is requested
   console.log(
-    `[Service Worker] StaleWhileRevalidate: Waiting for network response for ${requestUrl}`
+    `[Service Worker] StaleWhileRevalidate: No cache available, waiting for network response for ${requestUrl}`
   );
-  return networkFetchPromise;
+  try {
+    const networkResponse = await fetch(request);
+
+    // Cache the response for future use
+    if (networkResponse.ok) {
+      const clonedResponse = networkResponse.clone();
+      cache
+        .put(request, clonedResponse)
+        .catch((err) =>
+          console.error(
+            `[Service Worker] Failed to cache initial response: ${err.message}`
+          )
+        );
+    }
+
+    return networkResponse;
+  } catch (error) {
+    console.error(
+      `[Service Worker] Network fetch failed and no cache available: ${error.message}`
+    );
+    throw error;
+  }
 }
 
 // Fetch handler - slightly modified to ensure cache status is logged
