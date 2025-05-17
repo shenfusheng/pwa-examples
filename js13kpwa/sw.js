@@ -156,101 +156,81 @@ async function staleWhileRevalidate(request, cacheName) {
   console.log(`[Service Worker] StaleWhileRevalidate: Handling ${requestUrl}`);
 
   const cache = await caches.open(cacheName);
-  const cachedResponse = await cache.match(request);
 
+  // Try to get the response from cache.
+  const cachedResponsePromise = cache.match(request);
+  // Simultaneously, fetch the response from the network.
+  const networkResponsePromise = fetch(request);
+
+  // If a cached response is found, return it immediately.
+  // In the background, update the cache with the network response.
+  const cachedResponse = await cachedResponsePromise;
   if (cachedResponse) {
     console.log(
-      `[Service Worker] StaleWhileRevalidate: Cache hit for ${requestUrl}`
+      `[Service Worker] StaleWhileRevalidate: Cache hit for ${requestUrl}. Returning cached response.`
     );
-  } else {
-    console.log(
-      `[Service Worker] StaleWhileRevalidate: Cache miss for ${requestUrl}`
-    );
-  }
 
-  // Always perform the network request in the background to update the cache
-  // using a non-blocking approach
-  const backgroundUpdate = async () => {
-    try {
-      const networkResponse = await fetch(request);
-      console.log(
-        `[Service Worker] StaleWhileRevalidate: Background network response for ${requestUrl}`,
-        `status: ${networkResponse.status}`
-      );
-
-      if (networkResponse.ok) {
-        console.log(
-          `[Service Worker] StaleWhileRevalidate: Updating cache for ${requestUrl} in ${cacheName}`
-        );
-        try {
-          await cache.put(request, networkResponse.clone());
+    // Don't wait for the network to respond to update the cache (non-blocking).
+    // This ensures the user gets the cached content fast.
+    networkResponsePromise
+      .then((networkResponse) => {
+        if (networkResponse.ok) {
           console.log(
-            `[Service Worker] StaleWhileRevalidate: Cache updated for ${requestUrl}`
+            `[Service Worker] StaleWhileRevalidate: Background update - Caching network response for ${requestUrl}`
           );
-        } catch (err) {
-          console.error(
-            `[Service Worker] StaleWhileRevalidate: Failed to update cache for ${requestUrl}`,
-            err
+          // Clone the response before putting it in the cache, as the body can only be consumed once.
+          cache.put(request, networkResponse.clone()).catch((err) => {
+            console.error(
+              `[Service Worker] StaleWhileRevalidate: Background cache put failed for ${requestUrl}`,
+              err
+            );
+          });
+        } else {
+          console.warn(
+            `[Service Worker] StaleWhileRevalidate: Background update - Network request for ${requestUrl} failed with status ${networkResponse.status}. Not updating cache.`
           );
         }
-      } else {
+      })
+      .catch((error) => {
+        // This catch is for the background network request.
+        // The user has already received the cached response, so this error is for logging/debugging.
         console.warn(
-          `[Service Worker] StaleWhileRevalidate: Bad response (${networkResponse.status}) for ${requestUrl}`
+          `[Service Worker] StaleWhileRevalidate: Background network fetch for cache update failed for ${requestUrl}`,
+          error
         );
-      }
-      return networkResponse;
-    } catch (error) {
-      console.warn(
-        `[Service Worker] StaleWhileRevalidate: Background fetch failed for ${requestUrl}`,
-        error
-      );
-      return null;
-    }
-  };
+      });
 
-  // Start the background update but don't wait for it
-  if (self.registration.active) {
-    // We use setTimeout to ensure the fetch happens outside the critical path
-    setTimeout(() => {
-      backgroundUpdate().catch((err) =>
-        console.warn(`[Service Worker] Background update error: ${err.message}`)
-      );
-    }, 0);
-  }
-
-  // If we have a cached response, return it immediately
-  if (cachedResponse) {
-    console.log(
-      `[Service Worker] StaleWhileRevalidate: Immediately returning cached response for ${requestUrl}`
-    );
     return cachedResponse;
   }
 
-  // If no cached response, we have to wait for the network response
-  // This is only for the first time a resource is requested
+  // If no cached response is found, wait for the network response.
   console.log(
-    `[Service Worker] StaleWhileRevalidate: No cache available, waiting for network response for ${requestUrl}`
+    `[Service Worker] StaleWhileRevalidate: Cache miss for ${requestUrl}. Waiting for network response.`
   );
   try {
-    const networkResponse = await fetch(request);
-
-    // Cache the response for future use
+    const networkResponse = await networkResponsePromise;
+    // If the network request is successful, cache it before returning.
     if (networkResponse.ok) {
-      const clonedResponse = networkResponse.clone();
-      cache
-        .put(request, clonedResponse)
-        .catch((err) =>
-          console.error(
-            `[Service Worker] Failed to cache initial response: ${err.message}`
-          )
+      console.log(
+        `[Service Worker] StaleWhileRevalidate: Caching network response for ${requestUrl}`
+      );
+      // Clone the response before putting it in the cache.
+      cache.put(request, networkResponse.clone()).catch((err) => {
+        console.error(
+          `[Service Worker] StaleWhileRevalidate: Cache put failed for ${requestUrl}`,
+          err
         );
+      });
     }
-
     return networkResponse;
   } catch (error) {
+    // This error occurs if the network fetch fails and there was no cached response.
     console.error(
-      `[Service Worker] Network fetch failed and no cache available: ${error.message}`
+      `[Service Worker] StaleWhileRevalidate: Network fetch failed for ${requestUrl} and no cache available.`,
+      error
     );
+    // At this point, you might want to return a generic fallback page or error response,
+    // especially for navigation requests. For now, we re-throw.
     throw error;
   }
 }
@@ -297,13 +277,30 @@ self.addEventListener("fetch", (event) => {
 });
 
 // Listen for online/offline status messages
-self.addEventListener("message", (event) => {
-  if (event.data?.type === "NETWORK_STATUS") {
+self.addEventListener("message", async (event) => {
+  if (event.data && event.data.type === "NETWORK_STATUS") {
     console.log(
       `[Service Worker] Network is now ${
         event.data.isOnline ? "online" : "offline"
       }`
     );
+  } else if (event.data && event.data.type === "CLEAR_UPDATES") {
+    console.log(
+      "[Service Worker] Received CLEAR_UPDATES message. Deleting ALL caches."
+    );
+
+    // Get all cache keys
+    const keys = await caches.keys();
+    console.log("[Service Worker] All cache keys to be deleted:", keys);
+
+    // Delete ALL caches
+    await Promise.all(
+      keys.map((key) => {
+        console.log(`[Service Worker] Deleting cache: ${key}`);
+        return caches.delete(key);
+      })
+    );
+    console.log("[Service Worker] All caches deleted.");
   }
 });
 
@@ -324,25 +321,3 @@ async function checkForUpdates() {
     console.error("[Service Worker] Error checking for updates:", error);
   }
 }
-
-// Listen for messages from the client
-self.addEventListener("message", async (event) => {
-  if (event.data && event.data.type === "CLEAR_UPDATES") {
-    console.log("[Service Worker] Update tracking reset");
-
-    // Delete old cache versions
-    // Get all cache keys
-    const keys = await caches.keys();
-    console.log("[Service Worker] All cache keys:", keys);
-
-    // Delete old versions
-    await Promise.all(
-      keys
-        .filter((key) => !Object.values(CACHE_NAMES).includes(key))
-        .map((oldKey) => {
-          console.log(`[Service Worker] Deleting old cache: ${oldKey}`);
-          return caches.delete(oldKey);
-        })
-    );
-  }
-});
