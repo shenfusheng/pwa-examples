@@ -15,7 +15,7 @@ const CORE_ASSETS = [
   "./", // Root path (index.html)
   "./favicon.ico", // This was confirmed to exist from your logs
 ];
-const swversion = "v17"; // Update this version when making changes to the service worker
+const swversion = "v18"; // Update this version when making changes to the service worker
 // Install event - precache core assets
 self.addEventListener("install", (event) => {
   console.log("[Service Worker] Installing...", swversion);
