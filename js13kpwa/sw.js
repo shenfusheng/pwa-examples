@@ -46,7 +46,7 @@ self.addEventListener("install", (event) => {
 
         // Add core assets with error reporting
         try {
-          // await cache.addAll(CORE_ASSETS);
+          await cache.addAll(CORE_ASSETS);
           // console.log(
           //   "[Service Worker] Assets successfully cached in",
           //   CACHE_NAMES.static
