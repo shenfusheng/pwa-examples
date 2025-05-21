@@ -12,6 +12,7 @@ const CACHE_NAMES = {
 
 // Core static assets to precache - only include assets confirmed to exist
 const CORE_ASSETS = [
+  "/pwa-examples/js13kpwa/",
   "/pwa-examples/js13kpwa/index.html",
   "/pwa-examples/js13kpwa/app.js?v=19",
   "/pwa-examples/js13kpwa/data/games.js",
