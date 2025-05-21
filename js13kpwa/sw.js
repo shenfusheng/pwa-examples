@@ -6,7 +6,7 @@
 
 // Cache names - Increment version to force refresh
 const CACHE_NAMES = {
-  static: "static-cache-v15", // Incremented version number
+  static: "static-cache-v16", // Incremented version number
   dynamic: "dynamic-cache-v8",
 };
 
@@ -14,6 +14,19 @@ const CACHE_NAMES = {
 const CORE_ASSETS = [
   "./", // Root path (index.html)
   "./favicon.ico", // This was confirmed to exist from your logs
+  "/pwa-examples/js13kpwa/app.js?v=19",
+  "/pwa-examples/js13kpwa/data/games.js",
+  "/pwa-examples/js13kpwa/data/img/coconutty.jpg",
+  "/pwa-examples/js13kpwa/data/img/lost-in-cyberspace.jpg",
+  "/pwa-examples/js13kpwa/data/img/lost-pacman.jpg",
+  "/pwa-examples/js13kpwa/data/img/placeholder.png",
+  "/pwa-examples/js13kpwa/data/img/vernissage.jpg",
+  "/pwa-examples/js13kpwa/favicon.ico",
+  "/pwa-examples/js13kpwa/fonts/graduate.ttf",
+  "/pwa-examples/js13kpwa/icons/icon-168.png",
+  "/pwa-examples/js13kpwa/img/bg.png",
+  "/pwa-examples/js13kpwa/img/js13kgames.png",
+  "/pwa-examples/js13kpwa/style.css?v=3",
 ];
 const swversion = "v19"; // Update this version when making changes to the service worker
 // Install event - precache core assets
