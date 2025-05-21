@@ -12,8 +12,7 @@ const CACHE_NAMES = {
 
 // Core static assets to precache - only include assets confirmed to exist
 const CORE_ASSETS = [
-  "./", // Root path (index.html)
-  "./favicon.ico", // This was confirmed to exist from your logs
+  "/pwa-examples/js13kpwa/index.html",
   "/pwa-examples/js13kpwa/app.js?v=19",
   "/pwa-examples/js13kpwa/data/games.js",
   "/pwa-examples/js13kpwa/data/img/coconutty.jpg",
